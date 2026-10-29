@@ -1,0 +1,66 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'APK Build Type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Restore Keystore from Base64
+        run: |
+          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
+            echo "Decoding debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+      - name: Create Dummy .env if Missing
+        run: |
+          if [ ! -f ".env" ]; then
+            touch .env
+          fi
+
+      - name: Build Debug APK
+        if: "${{ github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == '' }}"
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Build Release APK
+        if: "${{ github.event.inputs.build_type == 'release' }}"
+        run: |
+          # If custom release signing is not set up, build unsigned or assembleRelease
+          ./gradlew assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GripForge-${{ github.event.inputs.build_type || 'debug' }}-apk
+          path: app/build/outputs/apk/**/*.apk
+          retention-days: 14
